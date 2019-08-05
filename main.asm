@@ -12,17 +12,17 @@
 .equ DelayMs = 20
 
 ; --------- CONFIGURANDO REGISTRADORES -----------
+.def led = r13;falta registrador
+.def buzzer = r14;falta registrador
+.def porta = r15;falta botar o estado da porta
 .def temp = r16
-.def led = ;falta registrador
-.def buzzer = ;falta registrador
-.def porta = ;falta botar o estado da porta
 .def porthistory = r17
 .def aux = r18
 .def nextMove = r19
 .def position0 = r20
 .def position1 = r21
 .def position2 = r22
-.def auxLoop = r23
+;.def auxLoop = r23
 .def indexArray = r24
 .def sizeStack = r25
 .def incStack = r31
@@ -47,34 +47,29 @@
 
 ; ------------------ DELAY FUNCTION -------------------------
 delay20ms:
-	ldi r13,byte3(ClockMhz * 1000 * DelayMs /5)
-	ldi r14,high(ClockMhz * 1000 * DelayMs /5)
-	ldi r15,low(ClockMhz * 1000 * DelayMs /5)
+	ldi r23,byte3(ClockMhz * 1000 * DelayMs /5)
+	ldi r18,high(ClockMhz * 1000 * DelayMs /5)
+	ldi r16,low(ClockMhz * 1000 * DelayMs /5)
 
-	subi r15,1
-	sbci r14,0
-	sbci r13,0
+	subi r16,1
+	sbci r18,0
+	sbci r23,0
 	brcc pc-3
 	
 	ret
-; -----------------------ACIONAR TIMER--------------------------
-.org OC1Aaddr
-rjmp timerporta
-.org OC1Baddr
-rjmp timermove
 ;--------------------------------------------------------
+.org OC1Aaddr
+rjmp timer_move
+.org OC1Baddr
+rjmp timer_buzzer
 
 reset:
-	
-	ldi temp,65 ;DEBUGGING
-	rcall print ;DEBUGGING
-	
 	;--------------------Inicializacao dos timers-----------------------------
 	;Timer Porta
 	#define CLOCK 16.0e6 	;clock speed
 	.equ PRESCALE = 0b101 	;/256 prescale
 	.equ PRESCALE_DIV = 1024
-	#define DELAY 0.3 		;seconds
+	#define DELAY 3 		;seconds
 	.equ WGM = 0b0100		;Waveform generation mode: CTC
 
 	;(you must ensure this value of TOP is between 0 and 65535)
@@ -105,6 +100,12 @@ reset:
 	sts TCCR1B, temp
 	ldi temp, ((WGM>> 2) << WGM12)|(PRESCALE << CS10)
 	sts TCCR1B, temp 				;start counter
+	lds temp, TIMSK1
+	ori temp, 0b111
+	sts TIMSK1, temp
+
+	sei
+
 	;------------------------------------------------------
 	
 	; --------- CONFIGURANDO USART -----------
@@ -137,7 +138,7 @@ reset:
 	ldi temp, (1<<PORTC2)|(1<<PORTC3)
 	out PORTC,temp
 	clr temp
-	ldi temp, (0<<DDC2)|(0<<DDC3)
+	ldi temp, (0<<DDC2)|(0<<DDC3)|(1<<DDC0)|(1<<DDC1)
 	out DDRC,temp
 
 	clr temp
@@ -179,6 +180,8 @@ reset:
 	sei ; Ativa as interrupções globais
 
 main:
+	; rcall timer_move
+
 	sei
 	cpi sizeStack, 3
 	brne main
@@ -208,10 +211,10 @@ HANDLE_PCINT0: ; Vai Lidar com PORTD
 
 	cpi temp, 0x1 ; Compara 'aux' com 1
 	breq INTERRUPT_PIND4 ; Se igual, segue o branch
-	INTERRUPT_PIND4:
 	;IR PARA TERREO APERTO EXTERNO
-	jmp end
+	INTERRUPT_PIND4:
 	;IR PARA TERREO APERTO INTERNO
+	jmp end
 	end:
 	reti
 
@@ -226,10 +229,10 @@ HANDLE_PCINT1: ; Vai Lidar com PORTC
 	
 	cpi temp, 0x1 ; Compara 'aux' com 1
 	breq INTERRUPT_PINC2 ; Se igual, segue o branch
-	INTERRUPT_PINC2:
 	;IR PARA 1 ANDAR APERTO EXTERNO
-	jmp end1
+	INTERRUPT_PINC2:
 	;IR PARA 1 ANDAR APERTO INTERNO
+	jmp end1
 	end1:
 	reti
 
@@ -409,15 +412,16 @@ timer_move:
 	breq skip_move ;skip overflow handler
 	/*match handler - done once every DELAY seconds*/
 	ldi temp, 1<<OCF1A ;write a 1 to clear the flag
-
+	out TIFR1, temp
+	ldi temp,(1<<PC0)
+	;eor leds, temp ;definir o registrador do led
+	out PORTC,temp
 	skip_move:
-		out TIFR1, temp
-		ldi temp, $FF
-		eor leds, temp ;definir o registrador do led
+		rjmp timer_move	
 		;settar a porta do led
 		;aqui codigo que atualiza o estado do andar;
 		;MUDAR O ESTADO DA PORTA
-	ret
+	reti
 ;----------DEPOIS QUE CHEGOU NO ANDAR E NÃO APERTOU BOTÃO ESPERA 5s E TOCA O BUZZER----------------;
 timer_buzzer:
 	in temp, TIFR1 ;request status from timers
@@ -431,15 +435,17 @@ timer_buzzer:
 		eor buzzer, temp ;definir o registrador do led
 		;settar a porta do buzzer
 
+	reti
+
 
 ;---------------AQUI É O CODIGO DE 10 -------------------;
 timer_close_door:
 	in temp, TIFR1 ;request status from timers
 	andi temp, 1<<OCF1B ;isolate only timer 1's match	
-	breq skip_move_buzz ;skip overflow handler
+	breq skip_move_buzz2 ;skip overflow handler
 	ldi temp, 1<<OCF1B ;write a 1 to clear the flag
 
-	skip_move_buzz:
+	skip_move_buzz2:
 		out TIFR1, temp
 		ldi temp, $FF
 		eor buzzer, temp ;definir o registrador do led
