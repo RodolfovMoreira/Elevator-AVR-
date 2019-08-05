@@ -13,6 +13,9 @@
 
 ; --------- CONFIGURANDO REGISTRADORES -----------
 .def temp = r16
+.def led = ;falta registrador
+.def buzzer = ;falta registrador
+.def porta = ;falta botar o estado da porta
 .def porthistory = r17
 .def aux = r18
 .def nextMove = r19
@@ -54,13 +57,55 @@ delay20ms:
 	brcc pc-3
 	
 	ret
-; -------------------------------------------------
+; -----------------------ACIONAR TIMER--------------------------
+.org OC1Aaddr
+rjmp timerporta
+.org OC1Baddr
+rjmp timermove
+;--------------------------------------------------------
 
 reset:
 	
 	ldi temp,65 ;DEBUGGING
 	rcall print ;DEBUGGING
+	
+	;--------------------Inicializacao dos timers-----------------------------
+	;Timer Porta
+	#define CLOCK 16.0e6 	;clock speed
+	.equ PRESCALE = 0b101 	;/256 prescale
+	.equ PRESCALE_DIV = 1024
+	#define DELAY 0.3 		;seconds
+	.equ WGM = 0b0100		;Waveform generation mode: CTC
 
+	;(you must ensure this value of TOP is between 0 and 65535)
+	.equ TOP = int(0.5 + ((CLOCK/PRESCALE_DIV)*DELAY))
+	.if TOP > 65535
+	.error "TOP is out of range"
+	.endif
+	ldi temp, high(TOP) 		;initialize compare value (TOP)
+	sts OCR1AH, temp
+	ldi temp, low(TOP)
+	sts OCR1AL, temp
+	
+	;Timer Andar
+	#define DELAY2 0.5 ;seconds
+	
+	;(you must ensure this of TOP2 value is between 0 and 65535)
+	.equ TOP2 = int(0.5 + ((CLOCK/PRESCALE_DIV)*DELAY2))
+	.if TOP2 > 65535
+	.error "TOP is out of range"
+	.endif
+	ldi temp, high(TOP2) 		;initialize compare value (TOP)
+	sts OCR1BH, temp
+	ldi temp, low(TOP2)
+	sts OCR1BL, temp
+	;----------------------------------------------------------------
+	;Iniciar timer
+	ldi temp, ((WGM&0b11) << WGM10)		;lower 2 bits of WGM
+	sts TCCR1B, temp
+	ldi temp, ((WGM>> 2) << WGM12)|(PRESCALE << CS10)
+	sts TCCR1B, temp 				;start counter
+	;------------------------------------------------------
 	
 	; --------- CONFIGURANDO USART -----------
 	.cseg
@@ -356,4 +401,56 @@ printAll:
 
 finish:
 	break
+
+;-----------MUDOU O ANDAR CHAMA ESSE TIMER-------------;
+timer_move:
+	in temp, TIFR1 ;request status from timers
+	andi temp, 1<<OCF1A ;isolate only timer 1's match	
+	breq skip_move ;skip overflow handler
+	/*match handler - done once every DELAY seconds*/
+	ldi temp, 1<<OCF1A ;write a 1 to clear the flag
+
+	skip_move:
+		out TIFR1, temp
+		ldi temp, $FF
+		eor leds, temp ;definir o registrador do led
+		;settar a porta do led
+		;aqui codigo que atualiza o estado do andar;
+		;MUDAR O ESTADO DA PORTA
+	ret
+;----------DEPOIS QUE CHEGOU NO ANDAR E NÃO APERTOU BOTÃO ESPERA 5s E TOCA O BUZZER----------------;
+timer_buzzer:
+	in temp, TIFR1 ;request status from timers
+	andi temp, 1<<OCF1B ;isolate only timer 1's match	
+	breq skip_move_buzz ;skip overflow handler
+	ldi temp, 1<<OCF1B ;write a 1 to clear the flag
+
+	skip_move_buzz:
+		out TIFR1, temp
+		ldi temp, $FF
+		eor buzzer, temp ;definir o registrador do led
+		;settar a porta do buzzer
+
+
+;---------------AQUI É O CODIGO DE 10 -------------------;
+timer_close_door:
+	in temp, TIFR1 ;request status from timers
+	andi temp, 1<<OCF1B ;isolate only timer 1's match	
+	breq skip_move_buzz ;skip overflow handler
+	ldi temp, 1<<OCF1B ;write a 1 to clear the flag
+
+	skip_move_buzz:
+		out TIFR1, temp
+		ldi temp, $FF
+		eor buzzer, temp ;definir o registrador do led
+		;settar a porta do buzzer desliga
+		;aqui codigo que atualiza o estado do andar e fechar a porta;
+
+
+close_door:
+
+open_door:
+
+
+	
 
