@@ -5,28 +5,31 @@
 ; Author : rodol
 ;
 .include "./m328Pdef.inc" ; ATIVANDO O USO DE LABELS PARA O FÁCIL ENTENDIMENTO
+
+; --------- DEFININDO CONSTANTES -----------
 .equ UBRRvalue = 103
+.equ ClockMHz = 20
+.equ DelayMs = 20
+
+; --------- CONFIGURANDO REGISTRADORES -----------
 .def temp = r16
 .def porthistory = r17
 .def aux = r18
-
-;.def temp = r16
-.def sizeStack = r25
 .def nextMove = r19
 .def position0 = r20
 .def position1 = r21
 .def position2 = r22
 .def auxLoop = r23
-;.def aux = r25
 .def indexArray = r24
+.def sizeStack = r25
 .def incStack = r31
-
-
-
-	
+; Registradores r13, r14 e r15 estão sendo usados na função delay
+; ---------  ------------------------  -----------
+;
+; --------- CONFIGURANDO INTERRUPÇÕES -----------	
 	.org 0x00
 	jmp reset
-; --------- CONFIGURANDO INTERRUPÇÕES -----------
+
 	.org INT0addr  ; Area responsável pelo INT0
 	jmp HANDLE_int0 ; Pular para ISR respectiva
 	.org INT1addr  ; Area responsável pelo INT1
@@ -39,108 +42,95 @@
 	.org 0x000A ; Área responsável pelo PCINT2
 	jmp HANDLE_PCINT0 ; Pular para ISR respectivas (PCMSK0) 
 
-print:
-	lds aux, UCSR0A
-	sbrs aux, UDRE0
-	rjmp print
-	sts UDR0, temp
+; ------------------ DELAY FUNCTION -------------------------
+delay20ms:
+	ldi r13,byte3(ClockMhz * 1000 * DelayMs /5)
+	ldi r14,high(ClockMhz * 1000 * DelayMs /5)
+	ldi r15,low(ClockMhz * 1000 * DelayMs /5)
+
+	subi r15,1
+	sbci r14,0
+	sbci r13,0
+	brcc pc-3
+	
 	ret
-
-printAll:
-	cpi sizeStack, 0
-	brge printPilha
-	rjmp finish
-	printPilha:
-	pop temp
-	subi temp, -48
-	dec sizeStack
-	rcall print
-	rjmp printAll
-
-finish:
-	break
-
+; -------------------------------------------------
 
 reset:
-	ldi temp,65
-	rcall print
+	
+	ldi temp,65 ;DEBUGGING
+	rcall print ;DEBUGGING
 
+	
+	; --------- CONFIGURANDO USART -----------
 	.cseg
-;initialize USART
-ldi temp, high (UBRRvalue) ;baud rate
-sts UBRR0H, temp
-ldi temp, low (UBRRvalue)
-sts UBRR0L, temp
-ldi temp, (3<<UCSZ00)
-sts UCSR0C, temp
-ldi temp, (1<<RXEN0)|(1<<TXEN0)
-sts UCSR0B, temp; 
+	ldi temp, high (UBRRvalue) ;baud rate
+	sts UBRR0H, temp
+	ldi temp, low (UBRRvalue)
+	sts UBRR0L, temp
+	ldi temp, (3<<UCSZ00)
+	sts UCSR0C, temp
+	ldi temp, (1<<RXEN0)|(1<<TXEN0)
+	sts UCSR0B, temp; 
 
-	;Stack initialization
+	; --------- CONFIGURANDO STACK -----------
 	ldi temp, low(RAMEND)
 	out SPL, temp
 	ldi temp, high(RAMEND)
 	out SPH, temp
 
+	; --------- CONFIGURANDO INTERRUPÇÕES EXTERNAS -----------
 
 	clr temp
 	ldi temp, (1<<PORTB1)|(1<<PORTB0)
 	out PORTB,temp
 	clr temp
-	ldi temp, (1<<DDB0)|(1<<DDB1)
+	ldi temp, (0<<DDB0)|(0<<DDB1)
 	out DDRB,temp
 	
 	clr temp
 	ldi temp, (1<<PORTC2)|(1<<PORTC3)
 	out PORTC,temp
 	clr temp
-	ldi temp, (1<<DDC2)|(1<<DDC3)
+	ldi temp, (0<<DDC2)|(0<<DDC3)
 	out DDRC,temp
 
 	clr temp
 	ldi temp, (1<<PORTD4)|(1<<PORTD5)
 	out PORTD,temp
 	clr temp
-	ldi temp, (1<<DDD4)|(1<<DDD5) ;0x00111000
+	ldi temp, (0<<DDD4)|(0<<DDD5)
 	out DDRD,temp
 
-	clr temp ; Zera 'temp'
-	ldi temp, (1<<ISC11)|(1<<ISC10)|(1<<ISC01)|(1<<ISC00) ; Controle para gerar a interrupção quando for borda de descida no INT1 e INT0
-	sts EICRA, r16 ; Carrega no registrador de interrupções externas
-
-	clr temp ; Zera 'temp'
-	ser temp ; Seta todos os bits '1'
-	;out EIMSK, r16 ; Carrega no registrador que 'liga' INT0 e INT1
-
-	;Checar a necessidade do codigo abaixo
-	clr temp ; Zera 'temp'
-	ldi temp, (1<<INTF1)|(1<<INTF0)
-	out EIFR,temp
-	; O vetor EIFR possui somente INTF1 E INTF0 onde
-	; caso ocorra uma interrupção ele seta o respectivo 
-	; lugar para identificação, porém não entendi o motivo de setar desde logo
-	;------------------------------
-
-	clr temp ; Zera 'temp'
+	clr temp 
 	ldi temp, (1<<PCIE2)|(1<<PCIE1)|(1<<PCIE0) ; Habilitando interrupções por PCINTx
 	sts PCICR, temp
 
-	;----Abaixo 'ligamos' os pinos PCINTx que queremos----
-	clr temp ; Zera 'temp'
+	;Abaixo 'ligamos' os pinos PCINTx que queremos
+	clr temp
 	ldi temp, (1<<PCINT21)|(1<<PCINT20) ; PCINT20 = PD4 e PCINT21 = PD5
 	sts PCMSK2, temp ; Registrador onde contén PCINTx (16-23)
 
-	clr temp ; Zera 'temp'
+	clr temp
 	ldi temp, (1<<PCINT11)|(1<<PCINT10) ; PCINT10 = PC2 e PCINT11 = PC3
 	sts PCMSK1, temp  ; Registrador onde contén PCINTx (8-14)
 	
-	clr temp ; Zera 'temp'
+	clr temp
 	ldi temp, (1<<PCINT1)|(1<<PCINT0) ; PCINT0 = PB0 e PCINT1 = PB1
 	sts PCMSK0, temp ; Registrador onde contén PCINTx (7-0)
 
+	; --------- CONFIGURANDO INTERRUPÇÕES INTERNAS -----------
+
+	clr temp
+	ldi temp, (1<<ISC11)|(1<<ISC10)|(1<<ISC01)|(1<<ISC00) 
+	sts EICRA, r16 
+
+	clr temp
+	ldi temp, (1<<INT0)|(1<<INT1)
+	out EIMSK, r16
+	;---------------------------------------------------------
+
 	ser porthistory; Setando tudo para comparação (Usado na idf. dos PCINT)
-
-
 	sei ; Ativa as interrupções globais
 
 main:
@@ -148,50 +138,83 @@ main:
 	cpi sizeStack, 3
 	brne main
 	rjmp printAll
-	rjmp main
-
-
-getArray:
-	cpi indexArray, 0
-	brne index1get
-	mov temp, position0
-	ret
+	rjmp main		
 	
-	index1get: 
-	cpi indexArray, 1
-	brne index2get
-	mov temp, position1
-	ret
+; -------------------- TRATANDO INTERRUPÇÕES ----------------------
+HANDLE_int0:
+	ldi temp,67
+	rcall print
 
-	index2get:
-	cpi indexArray, 2
-	brne endget
-	mov temp, position2
-	ret
-	
-	endget:
-	ret
-setArray:
-cpi indexArray, 0
-	brne index1set
-	mov position0, temp
-	ret
-	
-	index1set: 
-	cpi indexArray, 1
-	brne index2set
-	mov  position1, temp
-	ret
+	;ABRIR PORTA
+	reti
 
-	index2set:
-	cpi indexArray, 2
-	brne endset
-	mov  position2, temp
-	ret
-	
-	endset:
-	ret
+HANDLE_int1:
+	;FECHAR PORTA
+	reti
 
+HANDLE_PCINT0: ; Vai Lidar com PORTD
+	clr temp ; Zera 'temp'
+	in temp, PIND ; Copia PIND
+	eor temp,porthistory ; Como 'porthistory' é todo 1's o XOR retornará 0 em temp caso forem iguais
+	in porthistory, PIND  ; Faz uma cópia de PIND para porthistory
+	clr aux
+	ldi aux,1<<PIND4
+	and temp, aux ;  Se 'temp' for '1' PD4 foi ativo
+
+	cpi temp, 0x1 ; Compara 'aux' com 1
+	breq INTERRUPT_PIND4 ; Se igual, segue o branch
+	INTERRUPT_PIND4:
+	;IR PARA TERREO APERTO EXTERNO
+	jmp end
+	;IR PARA TERREO APERTO INTERNO
+	end:
+	reti
+
+HANDLE_PCINT1: ; Vai Lidar com PORTC
+	clr temp ; Zera 'temp'
+	in temp, PINC ; Copia PINC
+	eor temp,porthistory ; Como 'porthistory' é todo 1's o XOR retornará 0 em temp caso forem iguais
+	in porthistory, PINC  ; Faz uma cópia de PINC para porthistory
+	clr aux
+	ldi aux,1<<PINC2
+	and temp, aux ;  Se 'temp' for '1' PC2 foi ativo
+	
+	cpi temp, 0x1 ; Compara 'aux' com 1
+	breq INTERRUPT_PINC2 ; Se igual, segue o branch
+	INTERRUPT_PINC2:
+	;IR PARA 1 ANDAR APERTO EXTERNO
+	jmp end1
+	;IR PARA 1 ANDAR APERTO INTERNO
+	end1:
+	reti
+
+HANDLE_PCINT2: ; Vai Lidar com PORTB
+	ldi temp,64
+	rcall print
+	clr temp ; Zera 'temp'
+	in temp, PINB ; Copia PINB
+	eor temp,porthistory ; Como 'porthistory' é todo 1's o XOR retornará 0 em temp caso forem iguais
+	in porthistory, PINB  ; Faz uma cópia de PINB para porthistory
+	clr aux
+	ldi aux,1<<PINB1
+	and temp, aux ;  Se 'temp' for '1' PB1 foi ativo
+	
+	cpi temp, 0x1 ; Compara 'aux' com 1
+	breq INTERRUPT_PINB1 ; Se igual, segue o branch
+	INTERRUPT_PINB1:
+	cli
+	ldi temp, 68
+	rcall print
+	ldi nextMove,0
+	rjmp call_elevator
+	;IR PARA 2 ANDAR APERTO EXTERNO
+	jmp end2
+	;IR PARA 2 ANDAR APERTO INTERNO
+	end2:
+	reti
+
+
+; -------------------- FUNÇÕES ESSENCIAIS ----------------------
 call_elevator:;botão de fora 
 	ldi aux, 0
 	
@@ -270,86 +293,67 @@ call_elevator:;botão de fora
 	endWhile5:
 
 
-	rjmp main		
+	rjmp main
+
+getArray:
+	cpi indexArray, 0
+	brne index1get
+	mov temp, position0
+	ret
 	
+	index1get: 
+	cpi indexArray, 1
+	brne index2get
+	mov temp, position1
+	ret
 
+	index2get:
+	cpi indexArray, 2
+	brne endget
+	mov temp, position2
+	ret
+	
+	endget:
+	ret
+setArray:
+	cpi indexArray, 0
+	brne index1set
+	mov position0, temp
+	ret
+	
+	index1set: 
+	cpi indexArray, 1
+	brne index2set
+	mov  position1, temp
+	ret
 
-HANDLE_int0:
-	ldi temp,67
+	index2set:
+	cpi indexArray, 2
+	brne endset
+	mov  position2, temp
+	ret
+	
+	endset:
+	ret
+
+print:
+	lds aux, UCSR0A
+	sbrs aux, UDRE0
+	rjmp print
+	sts UDR0, temp
+	ret
+
+printAll:
+	cpi sizeStack, 0
+	brge printPilha
+	rjmp finish
+	printPilha:
+	pop temp
+	subi temp, -48
+	dec sizeStack
 	rcall print
+	rjmp printAll
 
-	;ABRIR PORTA
-	reti
-
-HANDLE_int1:
-	;FECHAR PORTA
-	reti
-
-;-----GUIDE-----
-; PCMSK2 = PIND
-; PCMSK1 = PINC
-; PCMSK0 = PINB
-;---------------
-
-HANDLE_PCINT0: ; Vai Lidar com PORTD
-	clr temp ; Zera 'temp'
-	in temp, PIND ; Copia PIND
-	eor temp,porthistory ; Como 'porthistory' é todo 1's o XOR retornará 0 em temp caso forem iguais
-	in porthistory, PIND  ; Faz uma cópia de PIND para porthistory
-	clr aux
-	ldi aux,1<<PIND4
-	and temp, aux ;  Se 'temp' for '1' PD4 foi ativo
-	
-	cpi temp, 0x1 ; Compara 'aux' com 1
-	breq INTERRUPT_PIND4 ; Se igual, segue o branch
-	INTERRUPT_PIND4:
-	;IR PARA TERREO APERTO EXTERNO
-	jmp end
-	;IR PARA TERREO APERTO INTERNO
-	end:
-	reti
-
-HANDLE_PCINT1: ; Vai Lidar com PORTC
-	clr temp ; Zera 'temp'
-	in temp, PINC ; Copia PINC
-	eor temp,porthistory ; Como 'porthistory' é todo 1's o XOR retornará 0 em temp caso forem iguais
-	in porthistory, PINC  ; Faz uma cópia de PINC para porthistory
-	clr aux
-	ldi aux,1<<PINC2
-	and temp, aux ;  Se 'temp' for '1' PC2 foi ativo
-	
-	cpi temp, 0x1 ; Compara 'aux' com 1
-	breq INTERRUPT_PINC2 ; Se igual, segue o branch
-	INTERRUPT_PINC2:
-	;IR PARA 1 ANDAR APERTO EXTERNO
-	jmp end1
-	;IR PARA 1 ANDAR APERTO INTERNO
-	end1:
-	reti
-
-HANDLE_PCINT2: ; Vai Lidar com PORTB
-	ldi temp,64
-	rcall print
-	clr temp ; Zera 'temp'
-	in temp, PINB ; Copia PINB
-	eor temp,porthistory ; Como 'porthistory' é todo 1's o XOR retornará 0 em temp caso forem iguais
-	in porthistory, PINB  ; Faz uma cópia de PINB para porthistory
-	clr aux
-	ldi aux,1<<PINB1
-	and temp, aux ;  Se 'temp' for '1' PB1 foi ativo
-	
-	cpi temp, 0x1 ; Compara 'aux' com 1
-	breq INTERRUPT_PINB1 ; Se igual, segue o branch
-	INTERRUPT_PINB1:
-	cli
-	ldi temp, 68
-	rcall print
-	ldi nextMove,0
-	rjmp call_elevator ;
-	;IR PARA 2 ANDAR APERTO EXTERNO
-	jmp end2
-	;IR PARA 2 ANDAR APERTO INTERNO
-	end2:
-	reti
-
+finish:
+	break
 
