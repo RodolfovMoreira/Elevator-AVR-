@@ -187,17 +187,19 @@ main:
 	
 ; -------------------- TRATANDO INTERRUPÇÕES ----------------------
 HANDLE_int0:
-	ldi temp,67
-	rcall print
-
+	rcall delay20ms ; Lidando com Bouncing
 	;ABRIR PORTA
 	reti
 
 HANDLE_int1:
+	rcall delay20ms ; Lidando com Bouncing
 	;FECHAR PORTA
 	reti
 
 HANDLE_PCINT0: ; Vai Lidar com PORTD
+	rcall delay20ms ; Lidando com Bouncing
+
+	;----- Artimanha para saber qual botão foi pressionado -----
 	clr temp ; Zera 'temp'
 	in temp, PIND ; Copia PIND
 	eor temp,porthistory ; Como 'porthistory' é todo 1's o XOR retornará 0 em temp caso forem iguais
@@ -205,6 +207,7 @@ HANDLE_PCINT0: ; Vai Lidar com PORTD
 	clr aux
 	ldi aux,1<<PIND4
 	and temp, aux ;  Se 'temp' for '1' PD4 foi ativo
+	; ----- ----- ----- ----- ----- ----- ----- ----- -----
 
 	cpi temp, 0x1 ; Compara 'aux' com 1
 	breq INTERRUPT_PIND4 ; Se igual, segue o branch
@@ -218,6 +221,9 @@ HANDLE_PCINT0: ; Vai Lidar com PORTD
 	reti
 
 HANDLE_PCINT1: ; Vai Lidar com PORTC
+	rcall delay20ms ; Lidando com Bouncing
+
+	;----- Artimanha para saber qual botão foi pressionado -----
 	clr temp ; Zera 'temp'
 	in temp, PINC ; Copia PINC
 	eor temp,porthistory ; Como 'porthistory' é todo 1's o XOR retornará 0 em temp caso forem iguais
@@ -225,6 +231,7 @@ HANDLE_PCINT1: ; Vai Lidar com PORTC
 	clr aux
 	ldi aux,1<<PINC2
 	and temp, aux ;  Se 'temp' for '1' PC2 foi ativo
+	; ----- ----- ----- ----- ----- ----- ----- ----- -----
 	
 	cpi temp, 0x1 ; Compara 'aux' com 1
 	breq INTERRUPT_PINC2 ; Se igual, segue o branch
@@ -238,6 +245,9 @@ HANDLE_PCINT1: ; Vai Lidar com PORTC
 	reti
 
 HANDLE_PCINT2: ; Vai Lidar com PORTB
+	rcall delay20ms ; Lidando com Bouncing
+
+	;----- Artimanha para saber qual botão foi pressionado -----
 	clr temp ; Zera 'temp'
 	in temp, PINB ; Copia PINB
 	eor temp,porthistory ; Como 'porthistory' é todo 1's o XOR retornará 0 em temp caso forem iguais
@@ -245,6 +255,7 @@ HANDLE_PCINT2: ; Vai Lidar com PORTB
 	clr aux
 	ldi aux,1<<PINB1
 	and temp, aux ;  Se 'temp' for '1' PB1 foi ativo
+	; ----- ----- ----- ----- ----- ----- ----- ----- ----- 
 	
 	cpi temp, 0x1 ; Compara 'aux' com 1
 	breq INTERRUPT_PINB1 ; Se igual, segue o branch
@@ -405,49 +416,99 @@ finish:
 
 ;-----------MUDOU O ANDAR CHAMA ESSE TIMER-------------;
 timer_move:
-	in temp, TIFR1 ;request status from timers
-	andi temp, 1<<OCF1A ;isolate only timer 1's match	
-	breq skip_move ;skip overflow handler
-	/*match handler - done once every DELAY seconds*/
-	ldi temp, 1<<OCF1A ;write a 1 to clear the flag
 
-	skip_move:
-		out TIFR1, temp
-		ldi temp, $FF
-		eor leds, temp ;definir o registrador do led
-		;settar a porta do led
-		;aqui codigo que atualiza o estado do andar;
-		;MUDAR O ESTADO DA PORTA
-	ret
+	reti
 ;----------DEPOIS QUE CHEGOU NO ANDAR E NÃO APERTOU BOTÃO ESPERA 5s E TOCA O BUZZER----------------;
 timer_buzzer:
-	in temp, TIFR1 ;request status from timers
-	andi temp, 1<<OCF1B ;isolate only timer 1's match	
-	breq skip_move_buzz ;skip overflow handler
-	ldi temp, 1<<OCF1B ;write a 1 to clear the flag
-
-	skip_move_buzz:
-		out TIFR1, temp
-		ldi temp, $FF
-		eor buzzer, temp ;definir o registrador do led
-		;settar a porta do buzzer
-
-
-;---------------AQUI É O CODIGO DE 10 -------------------;
-timer_close_door:
-	in temp, TIFR1 ;request status from timers
-	andi temp, 1<<OCF1B ;isolate only timer 1's match	
-	breq skip_move_buzz ;skip overflow handler
-	ldi temp, 1<<OCF1B ;write a 1 to clear the flag
-
-	skip_move_buzz:
-		out TIFR1, temp
-		ldi temp, $FF
-		eor buzzer, temp ;definir o registrador do led
-		;settar a porta do buzzer desliga
-		;aqui codigo que atualiza o estado do andar e fechar a porta;
-
+	cpi count, 1
+	breq toca_buzz
+	cpi count, 3
+	breq desliga_tudo
+	inc count
+	reti
+	
+	toca_buzz:
+		;liga buzz
+		push temp
+		in temp, SREG 
+		push temp 
+		ldi temp, (1<<PORTC1)
+		out PORTC, temp
+		pop temp 
+		out SREG, temp 
+		pop temp
+		
+		inc count
+		reti
+	
+	desliga_tudo:
+		rcall close_door
+		inc count
+		reti
 
 close_door:
+	ldi porta, 0
+	;DEVE PRINTAR ALGO AQUI
+	;usando o temp
+	push temp
+	in temp, SREG 
+	push temp 
+	
+	;DESLIGA O LED
+	ldi temp, (1<<PORTC0)
+	out PORTC, temp
+	
+	;DESLIGA O BUZZ
+	ldi temp, (1<<PORTC1)
+	out PORTC, temp
+	
+	pop temp 
+	out SREG, temp 
+	pop temp
+	
+	
+	;DESLIGANDO O TIMER
+	;salvando o que tem no temp para não perder
+	push temp
+	in temp, SREG 
+	push temp 
+	;a tarefa da interrupção ;entra aqui 
+	;ativa a interrupção de 5s e 10s
+	lds temp, TIMSK1
+	ori temp, 0b001
+	sts TIMSK1, temp
+	;devolve as coisas para o temp
+	pop temp 
+	out SREG, temp 
+	pop temp
+	;sai da func
+	reti
 
 open_door:
+	;verifica se está andando
+	cp atual, nextMove
+	brne nada
+	;abre a porta
+	ldi porta, 1
+	;LIGA LED
+	;salvando o que tem no temp para não perder
+	push temp
+	in temp, SREG 
+	push temp 
+	;DESLIGA O LED
+	ldi temp, (1<<PORTC0)
+	out PORTC, temp
+	;a tarefa da interrupção ;entra aqui 
+	;ativa a interrupção de 5s e 10s
+	lds temp, TIMSK1
+	ori temp, 0b101
+	sts TIMSK1, temp
+	;devolve as coisas para o temp
+	pop temp 
+	out SREG, temp 
+	pop temp
+	
+	;sai da func
+	nada: 
+		nop
+	ret
