@@ -12,19 +12,20 @@
 .equ DelayMs = 20
 
 ; --------- CONFIGURANDO REGISTRADORES -----------
+.def led = r10;falta registrador
+.def buzzer = r11;falta registrador
 .def temp = r16
-.def led = ;falta registrador
-.def buzzer = ;falta registrador
-.def porta = ;falta botar o estado da porta
 .def porthistory = r17
 .def aux = r18
 .def nextMove = r19
 .def position0 = r20
 .def position1 = r21
 .def position2 = r22
-.def auxLoop = r23
 .def indexArray = r24
 .def sizeStack = r25
+.def porta = r26;falta botar o estado da porta
+.def count = r27
+.def atual = r28
 .def incStack = r31
 ; Registradores r13, r14 e r15 estão sendo usados na função delay
 ; ---------  ------------------------  -----------
@@ -47,13 +48,13 @@
 
 ; ------------------ DELAY FUNCTION -------------------------
 delay20ms:
-	ldi r13,byte3(ClockMhz * 1000 * DelayMs /5)
-	ldi r14,high(ClockMhz * 1000 * DelayMs /5)
-	ldi r15,low(ClockMhz * 1000 * DelayMs /5)
+	ldi r16,byte3(ClockMhz * 1000 * DelayMs /5)
+	ldi r18,high(ClockMhz * 1000 * DelayMs /5)
+	ldi r23,low(ClockMhz * 1000 * DelayMs /5)
 
-	subi r15,1
-	sbci r14,0
-	sbci r13,0
+	subi r23,1
+	sbci r18,0
+	sbci r16,0
 	brcc pc-3
 	
 	ret
@@ -62,6 +63,8 @@ delay20ms:
 rjmp timerporta
 .org OC1Baddr
 rjmp timermove
+timermove:
+timerporta:
 ;--------------------------------------------------------
 
 reset:
@@ -130,7 +133,7 @@ reset:
 	ldi temp, (1<<PORTB1)|(1<<PORTB0)
 	out PORTB,temp
 	clr temp
-	ldi temp, (0<<DDB0)|(0<<DDB1)
+	ldi temp, (0<<DDB0)|(0<<DDB1)|(1<<DDB2) | (1<<DDB3)
 	out DDRB,temp
 	
 	clr temp
@@ -144,7 +147,7 @@ reset:
 	ldi temp, (1<<PORTD4)|(1<<PORTD5)
 	out PORTD,temp
 	clr temp
-	ldi temp, (0<<DDD4)|(0<<DDD5)
+	ldi temp, (0<<DDD4)|(0<<DDD5)|(1<<DDD0)|(1<<DDD1)
 	out DDRD,temp
 
 	clr temp 
@@ -186,14 +189,14 @@ main:
 	rjmp main		
 	
 ; -------------------- TRATANDO INTERRUPÇÕES ----------------------
-HANDLE_int0:
+HANDLE_int0: ;ABRIR A PORTA
 	rcall delay20ms ; Lidando com Bouncing
-	;ABRIR PORTA
+	rcall open_door
 	reti
 
-HANDLE_int1:
+HANDLE_int1: ; FECHAR A PORTA
 	rcall delay20ms ; Lidando com Bouncing
-	;FECHAR PORTA
+	rcall close_door
 	reti
 
 HANDLE_PCINT0: ; Vai Lidar com PORTD
@@ -211,11 +214,16 @@ HANDLE_PCINT0: ; Vai Lidar com PORTD
 
 	cpi temp, 0x1 ; Compara 'aux' com 1
 	breq INTERRUPT_PIND4 ; Se igual, segue o branch
-	;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA DESCER PARA O TÉRREO APERTANDO INTERNAMENTE
-	rjmp end
+
+	;--AQUI VAI INTERRUPÇÃO PRA DESCER PARA O TÉRREO APERTANDO INTERNAMENTE
+	ldi nextMove,0 ;Chama Térreo
+	jmp move_elevator
+	jmp end
 
 	INTERRUPT_PIND4:
-	;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA DESCER PARA O TÉRREO APERTANDO EXFCLITERNAMENTE
+	;--AQUI VAI INTERRUPÇÃO PRA DESCER PARA O TÉRREO APERTANDO EXFCLITERNAMENTE
+	ldi nextMove,0 ;Chama Térreo
+	jmp call_elevator
 	
 	end:
 	reti
@@ -235,11 +243,15 @@ HANDLE_PCINT1: ; Vai Lidar com PORTC
 	
 	cpi temp, 0x1 ; Compara 'aux' com 1
 	breq INTERRUPT_PINC2 ; Se igual, segue o branch
-	;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 1 ANDAR APERTANDO INTERNAMENTE
-	rjmp end1
+	;--AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 1 ANDAR APERTANDO INTERNAMENTE
+	ldi nextMove,1 ;Chama 1 andar
+	jmp move_elevator
+	jmp end1
 
 	INTERRUPT_PINC2:
-	;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 1 ANDAR APERTANDO EXTERNAMENTE
+	;--AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 1 ANDAR APERTANDO EXTERNAMENTE
+	ldi nextMove,1 ;Chama 1 andar
+	jmp call_elevator
 
 	end1:
 	reti
@@ -259,20 +271,22 @@ HANDLE_PCINT2: ; Vai Lidar com PORTB
 	
 	cpi temp, 0x1 ; Compara 'aux' com 1
 	breq INTERRUPT_PINB1 ; Se igual, segue o branch
-
 	;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 2 ANDAR APERTANDO INTERNAMENTE
-	rjmp end2
+	ldi nextMove,2 ;Chama 2 andar
+	jmp move_elevator
+	jmp end2
 
 	INTERRUPT_PINB1:
     ;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 2 ANDAR APERTANDO EXTERNAMENTE
-	
+	ldi nextMove,2 ;Chama 2 andar
+	jmp call_elevator
 
 	end2:
 	reti
 
 
 ; -------------------- FUNÇÕES ESSENCIAIS ----------------------
-call_elevator:;botão de fora 
+call_elevator: ;BOTÃO DE FORA 
 	ldi aux, 0
 	
 	cpi sizeStack, 0
@@ -280,55 +294,61 @@ call_elevator:;botão de fora
 	push nextMove
 	inc sizeStack
 	rjmp main
-	while:;pegar os valores da pilha e lojar no array
-		cp aux, sizeStack; comparação 
-		brge endWhile; brge  aux >= sizeStack, fim do while
-		mov indexArray, aux ; indexArray recebe valor de auxiliar
-		pop temp; retiramos o valor da pilha e colocamos em temp 
-		rcall setArray; na posição indexArray setamos a o array com o valor de temp, valo que retiramos da pilha
-		inc aux; incrementando aux
-		rjmp while; laço do while
-	endWhile:
-	
+
+while:;pegar os valores da pilha e lojar no array
+	cp aux, sizeStack; comparação 
+	brge endWhile; brge  aux >= sizeStack, fim do while
+	mov indexArray, aux ; indexArray recebe valor de auxiliar
+	pop temp; retiramos o valor da pilha e colocamos em temp 
+	rcall setArray; na posição indexArray setamos a o array com o valor de temp, valo que retiramos da pilha
+	inc aux; incrementando aux
+	rjmp while; laço do while
+
+endWhile:
 	ldi aux, 0
-	while2:;empilhar valores maiores que nextmove e por fim empilhar nextmove
-		cp aux, sizeStack
-		brge endWhile2; verificar se aux >= sizeStack
-		mov indexArray, aux; passa o valor de aux para indexarray
-		rcall getArray; coloca o valor de array[indexArray] em temp
-		cp nextMove, temp
-		brlt empilharGetArray; verificar se nextmove < temp
-		push nextMove; coloca nextmove na pilha
-		rjmp endWhile2; sai do while
-		empilharGetArray:; empilhar o valor que ta em temp, que o valor que estava no array
-		push temp
-		inc aux; incrementa aux
-		rjmp while2; laço
-	endWhile2:
 
+while2:;empilhar valores maiores que nextmove e por fim empilhar nextmove
+	cp aux, sizeStack
+	brge endWhile2; verificar se aux >= sizeStack
+	mov indexArray, aux; passa o valor de aux para indexarray
+	rcall getArray; coloca o valor de array[indexArray] em temp
+	cp nextMove, temp
+	brlt empilharGetArray; verificar se nextmove < temp
+	push nextMove; coloca nextmove na pilha
+	rjmp endWhile2; sai do while
+	empilharGetArray:; empilhar o valor que ta em temp, que o valor que estava no array
+	push temp
+	inc aux; incrementa aux
+	rjmp while2; laço
+
+endWhile2:
 	ldi incStack,1
-	while3://empilhar valores menores que nextmove, e igonorar ocorrencia do mesmo na hora de empilhar
-		cp aux, sizeStack; aqui não alteramos aux para 0, para continuar de onte parou o while anterior, tendo em vistas que os valores maiore que nextmove ja colocados
-		;na pilha não precisam ser verificados novamente
-		brge endWhile3; aux maior igual a sizeStack
-		mov indexArray, aux; indexarray recebe aux
-		rcall getArray; temp = array[indexArray]
-		cp nextMove, temp
-		brne empilharGetArray2; nextmove != temp
-		; nextmove == temp; ignoramos temp e decrementamos o tamalho da pilha
-		ldi incStack, 0
-		inc aux
-		rjmp while3;
-		empilharGetArray2:
-		push temp; empilha temp
-		inc aux; incrementa aux
-		rjmp while3; laço
-	endWhile3:
-	add sizeStack, incStack
 
+while3://empilhar valores menores que nextmove, e igonorar ocorrencia do mesmo na hora de empilhar
+	cp aux, sizeStack; aqui não alteramos aux para 0, para continuar de onte parou o while anterior, 
+	;tendo em vistas que os valores maiore que nextmove ja colocados
+	;na pilha não precisam ser verificados novamente
+	brge endWhile3; aux maior igual a sizeStack
+	mov indexArray, aux; indexarray recebe aux
+	rcall getArray; temp = array[indexArray]
+	cp nextMove, temp
+	brne empilharGetArray2; nextmove != temp
+	; nextmove == temp; ignoramos temp e decrementamos o tamalho da pilha
+	ldi incStack, 0
+	inc aux
+	rjmp while3;
+
+empilharGetArray2:
+	push temp; empilha temp
+	inc aux; incrementa aux
+	rjmp while3; laço
+
+endWhile3:
+	add sizeStack, incStack
 	;precisamos inverter a pilha, pois no ultimo passo a pilha fica invertida
 	ldi aux, 0
-	while4:
+
+while4:
 	cp aux, sizeStack
 	brge endWhile4
 	pop temp
@@ -336,10 +356,11 @@ call_elevator:;botão de fora
 	rcall setArray
 	inc aux
 	rjmp while4
-	endWhile4:
 	
+endWhile4:
 	ldi aux, 0
-	while5:
+
+while5:
 	cp aux, sizeStack
 	brge endWhile5
 	mov indexArray, aux
@@ -347,9 +368,8 @@ call_elevator:;botão de fora
 	push temp
 	inc aux
 	rjmp while5
-	endWhile5:
 
-
+endWhile5:
 	rjmp main
 
 getArray:
@@ -370,21 +390,22 @@ getArray:
 	mov temp, position2
 	ret
 	
-	endget:
+endget:
 	ret
+
 setArray:
 	cpi indexArray, 0
 	brne index1set
 	mov position0, temp
 	ret
 	
-	index1set: 
+index1set: 
 	cpi indexArray, 1
 	brne index2set
 	mov  position1, temp
 	ret
 
-	index2set:
+index2set:
 	cpi indexArray, 2
 	brne endset
 	mov  position2, temp
@@ -414,9 +435,87 @@ printAll:
 finish:
 	break
 
+;-----------------------------------------------------
+
+move_elevator: ;BOTÃO DE DENTRO
+	cpi sizeStack, 0; pilha vazia
+	brne skip1; 
+	push nextMove
+	inc sizeStack
+	rjmp main
+
+
+skip1:
+	pop position0;retira valor da pilha compara se next é igual ao valor retirado se sim so coloca o valor novamente
+	dec sizeStack
+	cp position0, nextMove
+	brne skip2 
+	push nextMove
+	inc sizeStack
+	rjmp main
+
+skip2:
+	cpi sizeStack, 0; se os valores forem diferentes verifica se pilha está vazia, se sim empilha os dois 
+	brne skip3
+	push nextMove
+	inc sizeStack
+	push position0
+	inc sizeStack
+	rjmp main
+
+skip3:; pilha não vazia, faz mais um pop
+	pop position1
+	dec sizeStack
+	cp position1, nextmove
+	brne skip4; se valor retirado diferente 
+	push nextMove
+	inc sizeStack
+	push position0
+	inc sizeStack
+	rjmp main
+
+skip4:
+	cpi sizeStack, 0
+	brne skip5
+	push nextMove
+	inc sizeStack
+	push position1
+	inc sizeStack
+	push position0
+	inc sizeStack
+	rjmp main
+
+skip5:
+	rjmp main
+
+;------------------------------------------------------
+
+setDisplay:
+	cpi temp, 0
+	brne displaySet1
+	ldi temp, 0b00000000
+	sts 0x25, temp
+	ret
+
+displaySet1:
+	cpi temp, 1
+	brne displaySet2
+	ldi temp, 0b00000100
+	sts 0x25, temp
+	ret
+
+displaySet2:
+	cpi temp, 2
+	brne displaySet3
+	ldi temp, 0b00001000
+	sts 0x25, temp
+
+displaySet3:
+	ret  
+
+
 ;-----------MUDOU O ANDAR CHAMA ESSE TIMER-------------;
 timer_move:
-
 	reti
 ;----------DEPOIS QUE CHEGOU NO ANDAR E NÃO APERTOU BOTÃO ESPERA 5s E TOCA O BUZZER----------------;
 timer_buzzer:
@@ -448,24 +547,23 @@ timer_buzzer:
 
 close_door:
 	ldi porta, 0
-	;DEVE PRINTAR ALGO AQUI
+	;DEVE PRINTAR ALGO
 	;usando o temp
 	push temp
 	in temp, SREG 
 	push temp 
 	
 	;DESLIGA O LED
-	ldi temp, (1<<PORTC0)
+	ldi temp, (0<<PORTC0)
 	out PORTC, temp
 	
 	;DESLIGA O BUZZ
-	ldi temp, (1<<PORTC1)
+	ldi temp, (0<<PORTC1)
 	out PORTC, temp
 	
 	pop temp 
 	out SREG, temp 
 	pop temp
-	
 	
 	;DESLIGANDO O TIMER
 	;salvando o que tem no temp para não perder
@@ -490,12 +588,11 @@ open_door:
 	brne nada
 	;abre a porta
 	ldi porta, 1
-	;LIGA LED
 	;salvando o que tem no temp para não perder
 	push temp
 	in temp, SREG 
 	push temp 
-	;DESLIGA O LED
+	;LIGA O LED
 	ldi temp, (1<<PORTC0)
 	out PORTC, temp
 	;a tarefa da interrupção ;entra aqui 
