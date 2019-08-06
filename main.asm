@@ -8,7 +8,7 @@
 
 ; --------- DEFININDO CONSTANTES -----------
 .equ UBRRvalue = 103
-.equ ClockMHz = 20
+.equ ClockMHz = 16
 .equ DelayMs = 20
 
 ; --------- CONFIGURANDO REGISTRADORES -----------
@@ -48,9 +48,9 @@
 
 ; ----- ------- DELAY FUNCTION -----------
 delay20ms:
-	ldi r16,byte3(ClockMhz * 1000 * DelayMs /5)
-	ldi r18,high(ClockMhz * 1000 * DelayMs /5)
-	ldi r23,low(ClockMhz * 1000 * DelayMs /5)
+	ldi r16,byte3(ClockMhz * 1000 * DelayMs /1)
+	ldi r18,high(ClockMhz * 1000 * DelayMs /1)
+	ldi r23,low(ClockMhz * 1000 * DelayMs /1)
 
 	subi r23,1
 	sbci r18,0
@@ -195,10 +195,7 @@ reset:
 ; ---------------------- MAIN ----------------------
 main:
 	sei
-	cpi sizeStack, 3
-	brne main
-	rjmp printAll
-	rjmp main		
+	jmp main		
 ;----------------------       ---------------------- 
 
 
@@ -236,12 +233,15 @@ HANDLE_PCINT0: ; Vai Lidar com PORTD
 
 	;--AQUI VAI INTERRUPÇÃO PRA DESCER PARA O TÉRREO APERTANDO INTERNAMENTE
 	ldi nextMove,0 ;Chama Térreo
+	call printMove
 	jmp move_elevator
 	jmp end
 
 	INTERRUPT_PIND4:
 	;--AQUI VAI INTERRUPÇÃO PRA DESCER PARA O TÉRREO APERTANDO EXTERNAMENTE
+	
 	ldi nextMove,0 ;Chama Térreo
+	call printCall
 	jmp call_elevator
 	
 	end:
@@ -263,13 +263,16 @@ HANDLE_PCINT1: ; Vai Lidar com PORTC
 	cpi temp, 0x0 ; Compara 'aux' com 1
 	breq INTERRUPT_PINC2 ; Se igual, segue o branch
 	;--AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 1 ANDAR APERTANDO INTERNAMENTE
+
 	ldi nextMove,1 ;Chama 1 andar
+	call printMove
 	jmp move_elevator
 	jmp end1
 
 	INTERRUPT_PINC2:
 	;--AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 1 ANDAR APERTANDO EXTERNAMENTE
 	ldi nextMove,1 ;Chama 1 andar
+	call printCall
 	jmp call_elevator
 
 	end1:
@@ -292,12 +295,15 @@ HANDLE_PCINT2: ; Vai Lidar com PORTB
 	breq INTERRUPT_PINB1 ; Se igual, segue o branch
 	;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 2 ANDAR APERTANDO INTERNAMENTE
 	ldi nextMove,2 ;Chama 2 andar
+	call printMove
 	jmp move_elevator
 	jmp end2
 
 	INTERRUPT_PINB1:
     ;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 2 ANDAR APERTANDO EXTERNAMENTE
 	ldi nextMove,2 ;Chama 2 andar
+	ldi temp, 67
+	rcall print
 	jmp call_elevator
 
 	end2:
@@ -306,6 +312,7 @@ HANDLE_PCINT2: ; Vai Lidar com PORTB
 
 ; -------------------- FUNÇÕES ESSENCIAIS ----------------------
 call_elevator: ;BOTÃO DE FORA 
+
 	ldi aux, 0
 	
 	cpi sizeStack, 0
@@ -445,18 +452,42 @@ print:
 	sbrs aux, UDRE0
 	rjmp print
 	sts UDR0, temp
-	ret
+	reti
 
-printAll:
-	cpi sizeStack, 0
-	brge printPilha
-	rjmp finish
-	printPilha:
-	pop temp
+printCall:
+	ldi temp,67
+	call print
+	ldi temp,97
+	call print
+	ldi temp,108
+	call print
+	ldi temp,108
+	call print
+	mov temp, nextMove
 	subi temp, -48
-	dec sizeStack
-	rcall print
-	rjmp printAll
+	call print
+	ldi temp, 8
+	call print
+	reti
+
+
+printMove:
+	ldi temp, 77
+	call print
+	ldi temp,111
+	call print
+	ldi temp,118
+	call print
+	ldi temp,101
+	call print
+	mov temp, nextMove
+	subi temp, -48
+	call print
+	ldi temp, 8
+	call print
+	reti
+
+
 
 finish:
 	break
@@ -659,3 +690,5 @@ open_door:
 	nada: 
 		nop
 	ret
+
+
