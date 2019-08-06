@@ -131,7 +131,7 @@ reset:
 	ldi temp, (1<<PORTB1)|(1<<PORTB0)
 	out PORTB,temp
 	clr temp
-	ldi temp, (0<<DDB0)|(0<<DDB1)|(1<<DDB2) | (1<<DDB3)
+	ldi temp, (0<<DDB0)|(0<<DDB1)|(1<<DDB2)|(1<<DDB3)
 	out DDRB,temp
 	
 	clr temp
@@ -210,12 +210,12 @@ main:
 ; -------------------- TRATANDO INTERRUPÇÕES ----------------------
 HANDLE_int0: ;ABRIR A PORTA
 	rcall delay20ms ; Lidando com Bouncing
-	rcall open_door
+	rjmp open_door
 	reti
 
 HANDLE_int1: ; FECHAR A PORTA
 	rcall delay20ms ; Lidando com Bouncing
-	rcall close_door
+	rjmp close_door
 	reti
 
 HANDLE_PCINT0: ; Vai Lidar com PORTD
@@ -231,7 +231,7 @@ HANDLE_PCINT0: ; Vai Lidar com PORTD
 	and temp, aux ;  Se 'temp' for '1' PD4 foi ativo
 	; ----- ----- ----- ----- ----- ----- ----- ----- -----
 
-	cpi temp, 0x1 ; Compara 'aux' com 1
+	cpi temp, 0x0 ; Compara 'aux' com 1
 	breq INTERRUPT_PIND4 ; Se igual, segue o branch
 
 	;--AQUI VAI INTERRUPÇÃO PRA DESCER PARA O TÉRREO APERTANDO INTERNAMENTE
@@ -260,7 +260,7 @@ HANDLE_PCINT1: ; Vai Lidar com PORTC
 	and temp, aux ;  Se 'temp' for '1' PC2 foi ativo
 	; ----- ----- ----- ----- ----- ----- ----- ----- -----
 	
-	cpi temp, 0x1 ; Compara 'aux' com 1
+	cpi temp, 0x0 ; Compara 'aux' com 1
 	breq INTERRUPT_PINC2 ; Se igual, segue o branch
 	;--AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 1 ANDAR APERTANDO INTERNAMENTE
 	ldi nextMove,1 ;Chama 1 andar
@@ -288,7 +288,7 @@ HANDLE_PCINT2: ; Vai Lidar com PORTB
 	and temp, aux ;  Se 'temp' for '1' PB1 foi ativo
 	; ----- ----- ----- ----- ----- ----- ----- ----- ----- 
 	
-	cpi temp, 0x1 ; Compara 'aux' com 1
+	cpi temp, 0x0 ; Compara 'aux' com 1
 	breq INTERRUPT_PINB1 ; Se igual, segue o branch
 	;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 2 ANDAR APERTANDO INTERNAMENTE
 	ldi nextMove,2 ;Chama 2 andar
@@ -312,6 +312,10 @@ call_elevator: ;BOTÃO DE FORA
 	brne while
 	push nextMove
 	inc sizeStack
+
+	lds temp, TIMSK1
+	ori temp, 0b011	
+	sts TIMSK1, temp
 	rjmp main
 
 while:;pegar os valores da pilha e lojar no array
@@ -389,6 +393,9 @@ while5:
 	rjmp while5
 
 endWhile5:
+	lds temp, TIMSK1
+	ori temp, 0b011	
+	sts TIMSK1, temp
 	rjmp main
 
 getArray:
@@ -461,6 +468,10 @@ move_elevator: ;BOTÃO DE DENTRO
 	brne skip1; 
 	push nextMove
 	inc sizeStack
+	
+	lds temp, TIMSK1
+	ori temp, 0b011	
+	sts TIMSK1, temp
 	rjmp main
 
 
@@ -471,6 +482,10 @@ skip1:
 	brne skip2 
 	push nextMove
 	inc sizeStack
+	
+	lds temp, TIMSK1
+	ori temp, 0b011	
+	sts TIMSK1, temp
 	rjmp main
 
 skip2:
@@ -480,6 +495,10 @@ skip2:
 	inc sizeStack
 	push position0
 	inc sizeStack
+	
+	lds temp, TIMSK1
+	ori temp, 0b011	
+	sts TIMSK1, temp
 	rjmp main
 
 skip3:; pilha não vazia, faz mais um pop
@@ -491,6 +510,10 @@ skip3:; pilha não vazia, faz mais um pop
 	inc sizeStack
 	push position0
 	inc sizeStack
+	
+	lds temp, TIMSK1
+	ori temp, 0b011	
+	sts TIMSK1, temp
 	rjmp main
 
 skip4:
@@ -502,9 +525,16 @@ skip4:
 	inc sizeStack
 	push position0
 	inc sizeStack
+
+	lds temp, TIMSK1
+	ori temp, 0b011	
+	sts TIMSK1, temp
 	rjmp main
 
 skip5:
+	lds temp, TIMSK1
+	ori temp, 0b011	
+	sts TIMSK1, temp
 	rjmp main
 
 ;------------------------------------------------------
@@ -535,6 +565,7 @@ displaySet3:
 
 ;-----------MUDOU O ANDAR CHAMA ESSE TIMER-------------;
 timer_move:
+	rjmp open_door
 	reti
 ;----------DEPOIS QUE CHEGOU NO ANDAR E NÃO APERTOU BOTÃO ESPERA 5s E TOCA O BUZZER----------------;
 timer_buzzer:
@@ -545,24 +576,24 @@ timer_buzzer:
 	inc count
 	reti
 	
-	toca_buzz:
-		;liga buzz
-		push temp
-		in temp, SREG 
-		push temp 
-		ldi temp, (1<<PORTC1)
-		out PORTC, temp
-		pop temp 
-		out SREG, temp 
-		pop temp
+toca_buzz:
+	;liga buzz
+	push temp
+	in temp, SREG 
+	push temp 
+	ldi temp, (1<<PORTC1)
+	out PORTC, temp
+	pop temp 
+	out SREG, temp 
+	pop temp
 		
-		inc count
-		reti
+	inc count
+	reti
 	
-	desliga_tudo:
-		rcall close_door
-		ldi count,0
-		reti
+desliga_tudo:
+	rcall close_door
+	ldi count,0
+	reti
 
 close_door:
 	ldi porta, 0
