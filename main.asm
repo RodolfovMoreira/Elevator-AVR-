@@ -46,7 +46,7 @@
 	.org 0x000A ; Área responsável pelo PCINT2
 	jmp HANDLE_PCINT0 ; Pular para ISR respectivas (PCMSK0) 
 
-; ------------------ DELAY FUNCTION -------------------------
+; ----- ------- DELAY FUNCTION -----------
 delay20ms:
 	ldi r16,byte3(ClockMhz * 1000 * DelayMs /5)
 	ldi r18,high(ClockMhz * 1000 * DelayMs /5)
@@ -58,28 +58,21 @@ delay20ms:
 	brcc pc-3
 	
 	ret
-; -----------------------ACIONAR TIMER--------------------------
-.org OC1Aaddr
-rjmp timerporta
-.org OC1Baddr
-rjmp timermove
-timermove:
-timerporta:
-;--------------------------------------------------------
+; ----------- ACIONAR TIMER -------------
+	.org OC1Aaddr
+	rjmp timer_move
+	.org OC1Baddr
+	rjmp timer_buzzer
+;-----------------------------------------
 
 reset:
-	
-	ldi temp,65 ;DEBUGGING
-	rcall print ;DEBUGGING
-	
-	;--------------------Inicializacao dos timers-----------------------------
+	;----------- Inicializacao dos timers -------------
 	;Timer Porta
 	#define CLOCK 16.0e6 	;clock speed
 	.equ PRESCALE = 0b101 	;/256 prescale
 	.equ PRESCALE_DIV = 1024
-	#define DELAY 0.3 		;seconds
+	#define DELAY 0.003 		;seconds
 	.equ WGM = 0b0100		;Waveform generation mode: CTC
-
 	;(you must ensure this value of TOP is between 0 and 65535)
 	.equ TOP = int(0.5 + ((CLOCK/PRESCALE_DIV)*DELAY))
 	.if TOP > 65535
@@ -91,8 +84,7 @@ reset:
 	sts OCR1AL, temp
 	
 	;Timer Andar
-	#define DELAY2 0.5 ;seconds
-	
+	#define DELAY2 0.0025 ;seconds
 	;(you must ensure this of TOP2 value is between 0 and 65535)
 	.equ TOP2 = int(0.5 + ((CLOCK/PRESCALE_DIV)*DELAY2))
 	.if TOP2 > 65535
@@ -102,13 +94,19 @@ reset:
 	sts OCR1BH, temp
 	ldi temp, low(TOP2)
 	sts OCR1BL, temp
-	;----------------------------------------------------------------
+	;-----------------------------------------
 	;Iniciar timer
 	ldi temp, ((WGM&0b11) << WGM10)		;lower 2 bits of WGM
 	sts TCCR1B, temp
 	ldi temp, ((WGM>> 2) << WGM12)|(PRESCALE << CS10)
 	sts TCCR1B, temp 				;start counter
-	;------------------------------------------------------
+	
+	;incia a interrupção
+	lds temp, TIMSK1
+	ori temp, 0b1
+	sts TIMSK1, temp
+	sei
+	;-----------------------------------------
 	
 	; --------- CONFIGURANDO USART -----------
 	.cseg
@@ -176,18 +174,39 @@ reset:
 	clr temp
 	ldi temp, (1<<INT0)|(1<<INT1)
 	out EIMSK, r16
-	;---------------------------------------------------------
+	
+	;---------------------- INICIAR VARIAVEIS ----------------------
+	
+	ldi porta, 0
+	ldi count, 0
+	ldi atual, 0
 
 	ser porthistory; Setando tudo para comparação (Usado na idf. dos PCINT)
 	sei ; Ativa as interrupções globais
 
+	; -------------------- ------------------ ----------------------
+
+
+
+
+
+
+
+; ---------------------- MAIN ----------------------
 main:
 	sei
 	cpi sizeStack, 3
 	brne main
 	rjmp printAll
 	rjmp main		
-	
+;----------------------       ---------------------- 
+
+
+
+
+
+
+
 ; -------------------- TRATANDO INTERRUPÇÕES ----------------------
 HANDLE_int0: ;ABRIR A PORTA
 	rcall delay20ms ; Lidando com Bouncing
@@ -221,7 +240,7 @@ HANDLE_PCINT0: ; Vai Lidar com PORTD
 	jmp end
 
 	INTERRUPT_PIND4:
-	;--AQUI VAI INTERRUPÇÃO PRA DESCER PARA O TÉRREO APERTANDO EXFCLITERNAMENTE
+	;--AQUI VAI INTERRUPÇÃO PRA DESCER PARA O TÉRREO APERTANDO EXTERNAMENTE
 	ldi nextMove,0 ;Chama Térreo
 	jmp call_elevator
 	
@@ -542,7 +561,7 @@ timer_buzzer:
 	
 	desliga_tudo:
 		rcall close_door
-		inc count
+		ldi count,0
 		reti
 
 close_door:
