@@ -320,9 +320,6 @@ call_elevator: ;BOTÃO DE FORA
 	push nextMove
 	inc sizeStack
 
-	lds temp, TIMSK1
-	ori temp, 0b011	
-	sts TIMSK1, temp
 	rjmp main
 
 while:;pegar os valores da pilha e lojar no array
@@ -400,9 +397,7 @@ while5:
 	rjmp while5
 
 endWhile5:
-	lds temp, TIMSK1
-	ori temp, 0b011	
-	sts TIMSK1, temp
+
 	rjmp main
 
 getArray:
@@ -499,10 +494,7 @@ move_elevator: ;BOTÃO DE DENTRO
 	brne skip1; 
 	push nextMove
 	inc sizeStack
-	
-	lds temp, TIMSK1
-	ori temp, 0b011	
-	sts TIMSK1, temp
+
 	rjmp main
 
 
@@ -514,9 +506,6 @@ skip1:
 	push nextMove
 	inc sizeStack
 	
-	lds temp, TIMSK1
-	ori temp, 0b011	
-	sts TIMSK1, temp
 	rjmp main
 
 skip2:
@@ -527,9 +516,6 @@ skip2:
 	push position0
 	inc sizeStack
 	
-	lds temp, TIMSK1
-	ori temp, 0b011	
-	sts TIMSK1, temp
 	rjmp main
 
 skip3:; pilha não vazia, faz mais um pop
@@ -542,9 +528,6 @@ skip3:; pilha não vazia, faz mais um pop
 	push position0
 	inc sizeStack
 	
-	lds temp, TIMSK1
-	ori temp, 0b011	
-	sts TIMSK1, temp
 	rjmp main
 
 skip4:
@@ -557,15 +540,9 @@ skip4:
 	push position0
 	inc sizeStack
 
-	lds temp, TIMSK1
-	ori temp, 0b011	
-	sts TIMSK1, temp
 	rjmp main
 
 skip5:
-	lds temp, TIMSK1
-	ori temp, 0b011	
-	sts TIMSK1, temp
 	rjmp main
 
 ;------------------------------------------------------
