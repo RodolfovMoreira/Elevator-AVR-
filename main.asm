@@ -12,17 +12,17 @@
 .equ DelayMs = 20
 
 ; --------- CONFIGURANDO REGISTRADORES -----------
-.def atual = r28; era o led agora é o atual
-.def count = r27 ;era o buzzer usa o temp pra settar
-.def porta = r26; estado da porta
 .def temp = r16
+.def led = ;falta registrador
+.def buzzer = ;falta registrador
+.def porta = ;falta botar o estado da porta
 .def porthistory = r17
 .def aux = r18
-.def nextMove = r19 ;saber o andar pega da pilha
+.def nextMove = r19
 .def position0 = r20
 .def position1 = r21
 .def position2 = r22
-;.def auxLoop = r23
+.def auxLoop = r23
 .def indexArray = r24
 .def sizeStack = r25
 .def incStack = r31
@@ -47,29 +47,34 @@
 
 ; ------------------ DELAY FUNCTION -------------------------
 delay20ms:
-	ldi r23,byte3(ClockMhz * 1000 * DelayMs /5)
-	ldi r18,high(ClockMhz * 1000 * DelayMs /5)
-	ldi r16,low(ClockMhz * 1000 * DelayMs /5)
+	ldi r13,byte3(ClockMhz * 1000 * DelayMs /5)
+	ldi r14,high(ClockMhz * 1000 * DelayMs /5)
+	ldi r15,low(ClockMhz * 1000 * DelayMs /5)
 
-	subi r16,1
-	sbci r18,0
-	sbci r23,0
+	subi r15,1
+	sbci r14,0
+	sbci r13,0
 	brcc pc-3
 	
 	ret
-;--------------------------------------------------------
+; -----------------------ACIONAR TIMER--------------------------
 .org OC1Aaddr
-rjmp timer_move
+rjmp timerporta
 .org OC1Baddr
-rjmp timer_buzzer
+rjmp timermove
+;--------------------------------------------------------
 
 reset:
+	
+	ldi temp,65 ;DEBUGGING
+	rcall print ;DEBUGGING
+	
 	;--------------------Inicializacao dos timers-----------------------------
 	;Timer Porta
 	#define CLOCK 16.0e6 	;clock speed
 	.equ PRESCALE = 0b101 	;/256 prescale
 	.equ PRESCALE_DIV = 1024
-	#define DELAY 0.003 		;seconds
+	#define DELAY 0.3 		;seconds
 	.equ WGM = 0b0100		;Waveform generation mode: CTC
 
 	;(you must ensure this value of TOP is between 0 and 65535)
@@ -83,7 +88,8 @@ reset:
 	sts OCR1AL, temp
 	
 	;Timer Andar
-	#define DELAY2 0.0025 ;seconds
+	#define DELAY2 0.5 ;seconds
+	
 	;(you must ensure this of TOP2 value is between 0 and 65535)
 	.equ TOP2 = int(0.5 + ((CLOCK/PRESCALE_DIV)*DELAY2))
 	.if TOP2 > 65535
@@ -99,13 +105,6 @@ reset:
 	sts TCCR1B, temp
 	ldi temp, ((WGM>> 2) << WGM12)|(PRESCALE << CS10)
 	sts TCCR1B, temp 				;start counter
-	
-	;incia a interrupção
-	lds temp, TIMSK1
-	ori temp, 0b1
-	sts TIMSK1, temp
-	sei
-
 	;------------------------------------------------------
 	
 	; --------- CONFIGURANDO USART -----------
@@ -138,7 +137,7 @@ reset:
 	ldi temp, (1<<PORTC2)|(1<<PORTC3)
 	out PORTC,temp
 	clr temp
-	ldi temp, (0<<DDC2)|(0<<DDC3)|(1<<DDC0)|(1<<DDC1)
+	ldi temp, (0<<DDC2)|(0<<DDC3)
 	out DDRC,temp
 
 	clr temp
@@ -174,10 +173,7 @@ reset:
 	clr temp
 	ldi temp, (1<<INT0)|(1<<INT1)
 	out EIMSK, r16
-	;------------------------INICIAR VARIAVEIS---------------------------------
-	ldi porta, 0
-	ldi count, 0
-	ldi atual, 0
+	;---------------------------------------------------------
 
 	ser porthistory; Setando tudo para comparação (Usado na idf. dos PCINT)
 	sei ; Ativa as interrupções globais
@@ -193,13 +189,12 @@ main:
 HANDLE_int0:
 	ldi temp,67
 	rcall print
-	;ABRIR A PORTA
-	rcall open_door
+
+	;ABRIR PORTA
 	reti
 
 HANDLE_int1:
 	;FECHAR PORTA
-	rcall close_door
 	reti
 
 HANDLE_PCINT0: ; Vai Lidar com PORTD
@@ -213,10 +208,12 @@ HANDLE_PCINT0: ; Vai Lidar com PORTD
 
 	cpi temp, 0x1 ; Compara 'aux' com 1
 	breq INTERRUPT_PIND4 ; Se igual, segue o branch
-	;IR PARA TERREO APERTO EXTERNO
+	;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA DESCER PARA O TÉRREO APERTANDO INTERNAMENTE
+	rjmp end
+
 	INTERRUPT_PIND4:
-	;IR PARA TERREO APERTO INTERNO
-	jmp end
+	;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA DESCER PARA O TÉRREO APERTANDO EXFCLITERNAMENTE
+	
 	end:
 	reti
 
@@ -231,16 +228,16 @@ HANDLE_PCINT1: ; Vai Lidar com PORTC
 	
 	cpi temp, 0x1 ; Compara 'aux' com 1
 	breq INTERRUPT_PINC2 ; Se igual, segue o branch
-	;IR PARA 1 ANDAR APERTO EXTERNO
+	;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 1 ANDAR APERTANDO INTERNAMENTE
+	rjmp end1
+
 	INTERRUPT_PINC2:
-	;IR PARA 1 ANDAR APERTO INTERNO
-	jmp end1
+	;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 1 ANDAR APERTANDO EXTERNAMENTE
+
 	end1:
 	reti
 
 HANDLE_PCINT2: ; Vai Lidar com PORTB
-	ldi temp,64
-	rcall print
 	clr temp ; Zera 'temp'
 	in temp, PINB ; Copia PINB
 	eor temp,porthistory ; Como 'porthistory' é todo 1's o XOR retornará 0 em temp caso forem iguais
@@ -251,15 +248,14 @@ HANDLE_PCINT2: ; Vai Lidar com PORTB
 	
 	cpi temp, 0x1 ; Compara 'aux' com 1
 	breq INTERRUPT_PINB1 ; Se igual, segue o branch
+
+	;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 2 ANDAR APERTANDO INTERNAMENTE
+	rjmp end2
+
 	INTERRUPT_PINB1:
-	cli
-	ldi temp, 68
-	rcall print
-	ldi nextMove,0
-	rjmp call_elevator
-	;IR PARA 2 ANDAR APERTO EXTERNO
-	jmp end2
-	;IR PARA 2 ANDAR APERTO INTERNO
+    ;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 2 ANDAR APERTANDO EXTERNAMENTE
+	
+
 	end2:
 	reti
 
@@ -409,99 +405,49 @@ finish:
 
 ;-----------MUDOU O ANDAR CHAMA ESSE TIMER-------------;
 timer_move:
+	in temp, TIFR1 ;request status from timers
+	andi temp, 1<<OCF1A ;isolate only timer 1's match	
+	breq skip_move ;skip overflow handler
+	/*match handler - done once every DELAY seconds*/
+	ldi temp, 1<<OCF1A ;write a 1 to clear the flag
 
-	reti
+	skip_move:
+		out TIFR1, temp
+		ldi temp, $FF
+		eor leds, temp ;definir o registrador do led
+		;settar a porta do led
+		;aqui codigo que atualiza o estado do andar;
+		;MUDAR O ESTADO DA PORTA
+	ret
 ;----------DEPOIS QUE CHEGOU NO ANDAR E NÃO APERTOU BOTÃO ESPERA 5s E TOCA O BUZZER----------------;
 timer_buzzer:
-	cpi count, 1
-	breq toca_buzz
-	cpi count, 3
-	breq desliga_tudo
-	inc count
-	reti
-	
-	toca_buzz:
-		;liga buzz
-		push temp
-		in temp, SREG 
-		push temp 
-		ldi temp, (1<<PORTC1)
-		out PORTC, temp
-		pop temp 
-		out SREG, temp 
-		pop temp
-		
-		inc count
-		reti
-	
-	desliga_tudo:
-		rcall close_door
-		inc count
-		reti
+	in temp, TIFR1 ;request status from timers
+	andi temp, 1<<OCF1B ;isolate only timer 1's match	
+	breq skip_move_buzz ;skip overflow handler
+	ldi temp, 1<<OCF1B ;write a 1 to clear the flag
+
+	skip_move_buzz:
+		out TIFR1, temp
+		ldi temp, $FF
+		eor buzzer, temp ;definir o registrador do led
+		;settar a porta do buzzer
+
+
+;---------------AQUI É O CODIGO DE 10 -------------------;
+timer_close_door:
+	in temp, TIFR1 ;request status from timers
+	andi temp, 1<<OCF1B ;isolate only timer 1's match	
+	breq skip_move_buzz ;skip overflow handler
+	ldi temp, 1<<OCF1B ;write a 1 to clear the flag
+
+	skip_move_buzz:
+		out TIFR1, temp
+		ldi temp, $FF
+		eor buzzer, temp ;definir o registrador do led
+		;settar a porta do buzzer desliga
+		;aqui codigo que atualiza o estado do andar e fechar a porta;
+
 
 close_door:
-	ldi porta, 0
-	;DEVE PRINTAR ALGO AQUI
-	;usando o temp
-	push temp
-	in temp, SREG 
-	push temp 
-	
-	;DESLIGA O LED
-	ldi temp, (1<<PORTC0)
-	out PORTC, temp
-	
-	;DESLIGA O BUZZ
-	ldi temp, (1<<PORTC1)
-	out PORTC, temp
-	
-	pop temp 
-	out SREG, temp 
-	pop temp
-	
-	
-	;DESLIGANDO O TIMER
-	;salvando o que tem no temp para não perder
-	push temp
-	in temp, SREG 
-	push temp 
-	;a tarefa da interrupção ;entra aqui 
-	;ativa a interrupção de 5s e 10s
-	lds temp, TIMSK1
-	ori temp, 0b001
-	sts TIMSK1, temp
-	;devolve as coisas para o temp
-	pop temp 
-	out SREG, temp 
-	pop temp
-	;sai da func
-	reti
 
 open_door:
-	;verifica se está andando
-	cp atual, nextMove
-	brne nada
-	;abre a porta
-	ldi porta, 1
-	;LIGA LED
-	;salvando o que tem no temp para não perder
-	push temp
-	in temp, SREG 
-	push temp 
-	;DESLIGA O LED
-	ldi temp, (1<<PORTC0)
-	out PORTC, temp
-	;a tarefa da interrupção ;entra aqui 
-	;ativa a interrupção de 5s e 10s
-	lds temp, TIMSK1
-	ori temp, 0b101
-	sts TIMSK1, temp
-	;devolve as coisas para o temp
-	pop temp 
-	out SREG, temp 
-	pop temp
-	
-	;sai da func
-	nada: 
-		nop
-	ret
