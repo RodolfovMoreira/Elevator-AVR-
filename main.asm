@@ -48,9 +48,9 @@
 
 ; ----- ------- DELAY FUNCTION -----------
 delay20ms:
-	ldi r16,byte3(ClockMhz * 1000 * DelayMs /1)
-	ldi r18,high(ClockMhz * 1000 * DelayMs /1)
-	ldi r23,low(ClockMhz * 1000 * DelayMs /1)
+	ldi r16,byte3(ClockMhz * 1000 * DelayMs /5)
+	ldi r18,high(ClockMhz * 1000 * DelayMs /5)
+	ldi r23,low(ClockMhz * 1000 * DelayMs /5)
 
 	subi r23,1
 	sbci r18,0
@@ -135,10 +135,10 @@ reset:
 	out DDRB,temp
 	
 	clr temp
-	ldi temp, (1<<PORTC2)|(1<<PORTC3)
+	ldi temp, (1<<PORTC2)|(1<<PORTC3) ;|(0<<PORTC0)|(0<<PORTC1)
 	out PORTC,temp
 	clr temp
-	ldi temp, (0<<DDC2)|(0<<DDC3)
+	ldi temp, (0<<DDC2)|(0<<DDC3)|(0<<DDC1)|(1<<DDC0)
 	out DDRC,temp
 
 	clr temp
@@ -180,6 +180,8 @@ reset:
 	ldi porta, 0
 	ldi count, 0
 	ldi atual, 0
+	ldi temp, 0
+	push temp
 
 	ser porthistory; Setando tudo para comparação (Usado na idf. dos PCINT)
 	sei ; Ativa as interrupções globais
@@ -194,8 +196,22 @@ reset:
 
 ; ---------------------- MAIN ----------------------
 main:
-	sei
-	jmp main		
+	;ldi temp, 0
+	;call setDisplay
+	;clr aux,(0<<PD4)
+	;sts PIND,aux
+
+	pop position0
+	cp atual, position0
+	breq igual
+	;Diferente ativa o timer de 3s
+	lds aux, TIMSK1
+	ori aux, 0b011
+	sts TIMSK1, aux
+	jmp main
+	igual:
+		push position0
+	jmp main
 ;----------------------       ---------------------- 
 
 
@@ -216,6 +232,8 @@ HANDLE_int1: ; FECHAR A PORTA
 	reti
 
 HANDLE_PCINT0: ; Vai Lidar com PORTD
+	ldi temp, 78
+	call print
 	rcall delay20ms ; Lidando com Bouncing
 
 	;----- Artimanha para saber qual botão foi pressionado -----
@@ -242,6 +260,8 @@ HANDLE_PCINT0: ; Vai Lidar com PORTD
 	
 	ldi nextMove,0 ;Chama Térreo
 	call printCall
+	ldi aux,(0<<PIND4)
+	out PIND,aux
 	jmp call_elevator
 	
 	end:
@@ -273,6 +293,8 @@ HANDLE_PCINT1: ; Vai Lidar com PORTC
 	;--AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 1 ANDAR APERTANDO EXTERNAMENTE
 	ldi nextMove,1 ;Chama 1 andar
 	call printCall
+	ldi aux,(0<<PINC2)
+	out PINC,aux
 	jmp call_elevator
 
 	end1:
@@ -293,17 +315,19 @@ HANDLE_PCINT2: ; Vai Lidar com PORTB
 	
 	cpi temp, 0x0 ; Compara 'aux' com 1
 	breq INTERRUPT_PINB1 ; Se igual, segue o branch
-	;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 2 ANDAR APERTANDO INTERNAMENTE
+	;-- AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 2 ANDAR APERTANDO INTERNAMENTE
 	ldi nextMove,2 ;Chama 2 andar
 	call printMove
 	jmp move_elevator
 	jmp end2
 
 	INTERRUPT_PINB1:
-    ;-- GABRIEL AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 2 ANDAR APERTANDO EXTERNAMENTE
+    ;-- AQUI VAI INTERRUPÇÃO PRA SUBIR PARA O 2 ANDAR APERTANDO EXTERNAMENTE
 	ldi nextMove,2 ;Chama 2 andar
 	ldi temp, 67
 	rcall print
+	ldi aux,(0<<PINB1)
+	out PINB,aux
 	jmp call_elevator
 
 	end2:
@@ -543,6 +567,7 @@ skip4:
 	rjmp main
 
 skip5:
+	
 	rjmp main
 
 ;------------------------------------------------------
@@ -551,7 +576,7 @@ setDisplay:
 	cpi temp, 0
 	brne displaySet1
 	ldi temp, 0b00000000
-	sts 0x25, temp
+	out 0x25, temp
 	ret
 
 displaySet1:
@@ -573,8 +598,20 @@ displaySet3:
 
 ;-----------MUDOU O ANDAR CHAMA ESSE TIMER-------------;
 timer_move:
-	rjmp open_door
+	;verifica se está andando
+	cp atual, position0
+	brne nada
+	;rjmp open_door
+	;abre a porta
+	nada: 
+		cp atual, position0
+		brlt increment
+		dec atual
+		ret
+		increment:
+			inc atual
 	reti
+	
 ;----------DEPOIS QUE CHEGOU NO ANDAR E NÃO APERTOU BOTÃO ESPERA 5s E TOCA O BUZZER----------------;
 timer_buzzer:
 	cpi count, 1
@@ -612,12 +649,12 @@ close_door:
 	push temp 
 	
 	;DESLIGA O LED
-	ldi temp, (0<<PORTC0)
-	out PORTC, temp
+	ldi temp, (0<<PINC0)
+	out PINC, temp
 	
 	;DESLIGA O BUZZ
-	ldi temp, (0<<PORTC1)
-	out PORTC, temp
+	ldi temp, (0<<PINC1)
+	out PINC, temp
 	
 	pop temp 
 	out SREG, temp 
@@ -641,18 +678,14 @@ close_door:
 	reti
 
 open_door:
-	;verifica se está andando
-	cp atual, nextMove
-	brne nada
-	;abre a porta
 	ldi porta, 1
+	;LIGA O LED
 	;salvando o que tem no temp para não perder
 	push temp
 	in temp, SREG 
 	push temp 
-	;LIGA O LED
-	ldi temp, (1<<PORTC0)
-	out PORTC, temp
+	ldi temp, (1<<PINC0)
+	out PINC, temp
 	;a tarefa da interrupção ;entra aqui 
 	;ativa a interrupção de 5s e 10s
 	lds temp, TIMSK1
@@ -662,10 +695,5 @@ open_door:
 	pop temp 
 	out SREG, temp 
 	pop temp
-	
-	;sai da func
-	nada: 
-		nop
-	ret
-
+	reti
 
